@@ -1,0 +1,152 @@
+---
+title: "Practical Machine Learning  |  Prediction of Exercise Classe"
+author: "Brandon Craft"
+date: "October 3, 2016"
+output: html_document
+---
+
+*** 
+### Summary and Goals
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the "Quantifed Self" movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise; the "classe" variable in the training set.
+They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+***
+
+### Data Processing
+#### Import
+To begin our project, we read in the data from the provided source URL and convert the .csv files into data.frames. 
+```{r}
+library(httr)   #   httr:GET(): To retrieve data from url.
+
+url <- NULL
+url$train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url$test  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+raw <- NULL
+raw$train <- read.csv(url$train, 
+                         sep = ",", 
+                         header = TRUE,
+                         stringsAsFactors = FALSE, 
+                         na.strings = c("NA", ""))
+
+raw$test <- read.csv(url$test, 
+                        sep = ",", 
+                        header = TRUE,
+                        stringsAsFactors = FALSE, 
+                        na.strings = c("NA", ""))
+```
+
+#### Clean
+Next we make sure to handle any remaining NA values within the data. Only complete cases are kept. 
+```{r}
+clean <- NULL
+clean$train <- raw$train[colSums(is.na(raw$train)) == 0]
+clean$test  <- raw$test[colSums(is.na(raw$test)) == 0]
+```
+
+#### Tidy
+It is very important that we take precaution to remove any variables will not be helpful predictors of the response. In this case, we remove columns 1 - 7 as the variables are meta data collected with the samples. 
+We also check and store the dimensions of the final clean datasets.
+```{r}
+clean$train <- clean$train[,-c(1:7)]
+clean$test <- clean$test[,-c(1:7)]
+
+size <- NULL
+size$train <- dim(clean$train)
+size$test  <- dim(clean$test)
+```
+
+***
+
+### Model Building
+#### Partition
+Split training dataset into two sets of that we can use to help train a model for prediction. 
+We follow the typical standard for data partitioning and create 60/40 split, Training/Test. 
+```{r, message=FALSE, warning=FALSE}
+library(caret)  #   caret::createDataPartition():   Split training data into to sets for model training. 
+partition <- createDataPartition(clean$train$classe, p=0.6, list=FALSE)
+
+train <- NULL
+train$train  <- clean$train[partition, ]
+train$test   <- clean$train[-partition, ]
+```
+
+#### Correlation Matrix
+Now we create and examine the Correlation Matrix Plot of the partioned training data. This plot displays all of the correlation values between pairs of predictors within the dataset. We will construct the Correlation Matrix for predictors of "classe", (col = 53).
+```{r, message=FALSE, warning=FALSE}
+corr_Matrix <- cor(train$train[,-53])
+
+library(corrplot)
+corrplot(corr_Matrix, 
+         order = "FPC", 
+         method = "color", 
+         type = "lower", 
+         tl.cex = 0.6, 
+         tl.col = rgb(0,0,0)
+         )
+```
+
+***
+### Model Evaluation
+#### Training
+Train our Model with Random Forest 
+```{r}
+library(randomForest)   #   randomForest:train(), randomForest:trainControl(), randomForest:varImpPlot()
+
+set.seed(12345)
+control <- trainControl(method="cv",number=5,classProbs=FALSE, verboseIter=F,preProcOptions="pca",allowParallel=T)
+
+modelFit <- train(classe ~., 
+                  method = "rf", 
+                  data = train$train, 
+                  trControl = control, 
+                  ntree = 100, 
+                  importance = TRUE)
+
+varImpPlot(modelFit$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 1, 
+           main = "Variable Importance as measured by Trained Random Forest Model")
+```
+
+
+#### Cross Validation Testing 
+Apply the fitted RF model to the test partition of the training dataset. 
+```{r}
+vaildRF <- predict(modelFit, train$test)
+confus <- confusionMatrix(train$test$classe, vaildRF)
+confus
+```
+Checking the accuracy rate provided in the confusion Matrix results we see that the Random Forest model provided a 99.11% accuracy rate. This is sufficient to assume we can use this model for our prediction. 
+
+#### Out-of-Sample Error Estimate
+
+```{r}
+accuracy <- postResample(train$test$classe, vaildRF)
+model_accuracy <- accuracy[[1]]
+model_accuracy
+
+out_of_sample_error <- 1 - model_accuracy
+out_of_sample_error
+```
+We find the out of sample error to be incredibly low for this model fit using a random forest which also give support for the use of the model on the final test data set.
+
+***
+
+### Model Prediction
+We now apply the random forest model to our final predicition data set and retrieve the 20 predictions by calling the prediciton final. 
+```{r}
+finalModel <- predict(modelFit, clean$test)
+finalModel
+```
+
+***
+
+##### Reference
+The data for this project are provided by:  
+
+> http://groupware.les.inf.puc-rio.br/har
+
+*See the section, "Weight Lifting Exercise Dataset" for more details.* 
+
+***
